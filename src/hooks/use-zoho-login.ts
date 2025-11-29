@@ -1,104 +1,80 @@
-// src/hooks/use-zoho-login.ts
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSignIn, useClerk } from "@clerk/nextjs";
 
 function debugLog(...args: unknown[]) {
-  try {
-    // normal console
-    // eslint-disable-next-line no-console
-    console.log("[ZOHO-DEBUG]", ...args);
-    // also send to parent (if in an iframe) so parent devtools can see it
-    if (typeof window !== "undefined" && window.parent && window.parent !== window) {
-      try {
-        window.parent.postMessage({ source: "ZOHO_DEBUG", payload: args }, "*");
-      } catch (e) {
-        console.log(e);
-        // ignore
-      }
-    }
-    // also write a small trace into localStorage (last message)
-    if (typeof window !== "undefined" && window.localStorage) {
-      try {
-        const prev = JSON.parse(window.localStorage.getItem("zohodebug_trace_v1" ) || "[]");
-        prev.push({ ts: new Date().toISOString(), args: JSON.stringify(args) });
-        // keep small
-        window.localStorage.setItem("zohodebug_trace_v1", JSON.stringify(prev.slice(-20)));
-      } catch (e) {
-        console.log(e);
-        // ignore
-      }
-    }
-  } catch (e) {
-    console.log(e);
-    // ignore all debug failures
-  }
+  console.log("[ZOHO-DEBUG]", ...args);
 }
 
 export function useZohoLogin() {
   const router = useRouter();
+  const search = useSearchParams();
+  const zoho = search.get("zoho");
+  const token = search.get("token");
+
+  const { isLoaded, signIn } = useSignIn();
+  const { setActive } = useClerk();  
 
   useEffect(() => {
-    debugLog("useZohoLogin mounted");
+    // -------------------- PHASE 2: Token consumption --------------------
+    if (token && isLoaded) {
+      debugLog("Found token, consuming with Clerk...");
 
-    if (typeof window === "undefined") {
-      debugLog("exit: window is undefined");
+      (async () => {
+        try {
+          const resp = await signIn.create({
+            strategy: "ticket",
+            ticket: token,
+          });
+
+          await setActive({ session: resp.createdSessionId });
+
+          debugLog("Token consumed successfully. Redirect → /");
+          router.replace("/");
+        } catch (e) {
+          console.error("Failed to consume sign-in token:", e);
+        }
+      })();
+
       return;
     }
 
-    debugLog("location.href", window.location.href);
-    const params = new URLSearchParams(window.location.search);
-    const zoho = params.get("zoho");
-    debugLog("zoho param raw:", zoho);
+    if (!isLoaded) return;
 
-    if (!zoho) {
-      debugLog("no zoho param -> returning");
-      return;
-    }
+    // -------------------- PHASE 1: Zoho payload handling --------------------
+    if (!zoho) return;
+
+    debugLog("Zoho login flow starting...");
 
     (async () => {
       try {
         let zohoData;
+
         try {
           zohoData = JSON.parse(decodeURIComponent(zoho));
-        } catch (parseErr) {
-          debugLog("json parse failed, using raw", parseErr);
+        } catch {
           zohoData = { raw: decodeURIComponent(zoho) };
         }
-        debugLog("zohoData parsed:", zohoData);
 
-        debugLog("POST /api/zoho-auth body:", zohoData);
         const res = await fetch("/api/zoho-auth", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(zohoData),
         });
 
-        debugLog("zoho-auth status", res.status);
-        const json = await res.json().catch((e) => {
-          debugLog("failed to parse zoho-auth json:", e);
-          return null;
-        });
-
-        debugLog("zoho-auth response json:", json);
+        const json = await res.json();
 
         if (json?.token) {
-          // mark that zoho login already redirected (so reloads don't re-run)
-          try {
-            window.localStorage.setItem("zoho_login_done", "1");
-          } catch (e) { console.log(e); }
-
-          debugLog("got token, navigating to home");
-          // single encode; Token will decode once
-          window.location.href = `/?token=${encodeURIComponent(json.token)}`;
-        }
-        else {
-          debugLog("zoho-auth error or no token:", json);
+          debugLog("Zoho auth successful → redirecting to /?token=...");
+          router.replace(`/?token=${encodeURIComponent(json.token)}`);
+        } else {
+          debugLog("zoho-auth failed:", json);
         }
       } catch (e) {
-        debugLog("useZohoLogin failed:", e);
+        console.error("Zoho login failed:", e);
       }
     })();
-  }, [router]);
+  }, [isLoaded, zoho, token]);
 }

@@ -3,16 +3,16 @@
 import { ConvexReactClient, Authenticated, Unauthenticated, AuthLoading } from 'convex/react';
 import { ReactNode } from 'react';
 import { ConvexProviderWithClerk } from 'convex/react-clerk';
-import { ClerkProvider, useAuth, SignIn } from '@clerk/nextjs';
+import { ClerkProvider, useAuth } from '@clerk/nextjs';
 import { FullscreenLoader } from './ui/fullscreen-loader';
 import { useZohoLogin } from '@/hooks/use-zoho-login'; // <- import the hook
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
-function ZohoInitializer({ children }: { children: ReactNode }) {
+function ZohoInitializer() {
   // This runs inside ClerkProvider so useClerk/useAuth used inside the hook are available
   useZohoLogin();
-  return <>{children}</>;
+  return <></>;
 }
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
@@ -21,17 +21,14 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
       {/* call the hook from a child component so Clerk context is available */}
       
         <ConvexProviderWithClerk useAuth={useAuth} client={convex}>
-          <ZohoInitializer>
+          <ZohoInitializer />
           <Authenticated>{children}</Authenticated>
-          </ZohoInitializer>
           <Unauthenticated>
-            <div className="flex flex-col items-center justify-center min-h-screen">
-              <SignIn routing="hash" />
-            </div>
+            <FullscreenLoader label="Autherizing via zoho account..." />
           </Unauthenticated>
 
           <AuthLoading>
-            <FullscreenLoader label="Auth loading..." />
+            <FullscreenLoader label="Autherizing via zoho account..." />
           </AuthLoading>
         </ConvexProviderWithClerk>
       
