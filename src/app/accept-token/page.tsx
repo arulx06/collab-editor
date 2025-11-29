@@ -1,105 +1,90 @@
+// src/app/accept-token/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSignIn, useClerk } from "@clerk/nextjs";
+
+function dlog(...args: unknown[]) {
+  // eslint-disable-next-line no-console
+  console.log("[ACCEPT-TOKEN]", ...args);
+  try {
+    if (typeof window !== "undefined" && window.parent && window.parent !== window) {
+      window.parent.postMessage({ source: "ACCEPT_TOKEN_DEBUG", payload: args }, "*");
+    }
+    if (typeof window !== "undefined" && window.localStorage) {
+      const prev = JSON.parse(window.localStorage.getItem("accept_token_debug_v1") || "[]");
+      prev.push({ ts: new Date().toISOString(), args: JSON.stringify(args) });
+      window.localStorage.setItem("accept_token_debug_v1", JSON.stringify(prev.slice(-30)));
+    }
+  } catch (e) {
+    console.log(e);
+    // ignore
+  }
+}
 
 export default function AcceptTokenPage() {
   const router = useRouter();
   const { isLoaded: signInLoaded, signIn } = useSignIn();
   const clerk = useClerk();
-  const [status, setStatus] = useState<"idle" | "working" | "done" | "failed" | "no-token">("idle");
 
   useEffect(() => {
-    async function consumeToken() {
-      setStatus("working");
+    dlog("mounted accept-token page", { signInLoaded });
 
-      // read token from query param
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get("token") ?? params.get("ticket"); // accept either name
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token") ?? params.get("ticket");
+    dlog("token present:", !!token);
 
-      if (!token) {
-        setStatus("no-token");
-        // fallback: go home in a second
-        setTimeout(() => router.replace("/"), 900);
-        return;
-      }
+    if (!token) {
+      dlog("no token found -> redirecting");
+      router.replace("/");
+      return;
+    }
 
-      // wait for Clerk signIn JS icon to load
-      if (!signInLoaded || !signIn) {
-        // If Clerk not loaded yet, wait and retry a few times
+    (async () => {
+      try {
         const start = Date.now();
-        while ((!signInLoaded || !signIn) && Date.now() - start < 5000) {
-          // small delay
+        while ((!signInLoaded || !signIn) && Date.now() - start < 4000) {
           // eslint-disable-next-line no-await-in-loop
           await new Promise((r) => setTimeout(r, 100));
         }
-      }
+        dlog("after wait: signInLoaded:", signInLoaded, "signIn exists:", !!signIn);
 
-      if (!signIn) {
-        console.error("Clerk signIn object not available");
-        setStatus("failed");
-        return;
-      }
+        if (!signIn) {
+          dlog("signIn not available - abort");
+          router.replace("/?signinUnavailable=1");
+          return;
+        }
 
-      try {
-        // Create a sign-in attempt using the ticket strategy.
-        // This consumes the backend-created sign-in token.
-        const signInAttempt = await signIn.create({
+        dlog("calling signIn.create with ticket (first 50 chars):", token.slice(0, 50));
+        const attempt = await signIn.create({
           strategy: "ticket",
           ticket: token,
         });
+        dlog("signIn.create result:", attempt);
 
-        // If the sign-in attempt produced a created session id, set it active.
-        // This avoids any UI. setActive makes the session the current browser session.
-        const createdSessionId = (signInAttempt)?.createdSessionId ?? null;
+        const createdSessionId = (attempt)?.createdSessionId ?? null;
+        dlog("createdSessionId:", createdSessionId);
 
         if (createdSessionId && clerk?.setActive) {
-          // setActive expects SetActiveParams — pass session id
+          dlog("calling clerk.setActive");
           await clerk.setActive({ session: createdSessionId });
-          setStatus("done");
-
-          // Now user is signed in in-browser. Redirect to app home / desired page.
+          dlog("setActive succeeded; now redirecting to /");
           router.replace("/");
           return;
         }
 
-        // Some setups require extra verification steps (2FA / first factor). If that
-        // happens we cannot complete silently. Handle it gracefully:
-        if ((signInAttempt)?.status === "needs_first_factor") {
-          console.warn("Sign-in requires first factor verification; cannot complete silently.");
-          setStatus("failed");
-          // decide: redirect to a UI route to complete verification, or fallback to sign-in page:
-          router.replace("/sign-in"); // optional
-          return;
-        }
-
-        // If no createdSessionId and no explicit need-for-interaction, treat as failure
-        console.error("No createdSessionId returned from signIn.create:", signInAttempt);
-        setStatus("failed");
+        // if we hit here, signIn didn't produce a createdSessionId
+        dlog("sign-in attempt didn't produce session; full attempt:", attempt);
+        // If attempt.status indicates need for verification, surface reason to logs
+        // (it might be 'needs_first_factor' or such)
+        router.replace("/?signinIncomplete=1");
       } catch (err) {
-        console.error("Error accepting sign-in token:", err);
-        setStatus("failed");
+        dlog("accept-token error:", err);
+        router.replace("/?signinError=1");
       }
-    }
-
-    // Run once on mount
-    consumeToken();
+    })();
   }, [router, signInLoaded, signIn, clerk]);
 
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div>
-        {status === "working" && <p>Signing you in…</p>}
-        {status === "done" && <p>Signed in — redirecting…</p>}
-        {status === "failed" && (
-          <div>
-            <p>Could not sign you in silently. Please try signing in manually.</p>
-            <button onClick={() => window.location.replace("/sign-in")}>Open sign-in</button>
-          </div>
-        )}
-        {status === "no-token" && <p>No token found in URL.</p>}
-      </div>
-    </div>
-  );
+  return <div className="min-h-screen flex items-center justify-center">Processing sign-in token…</div>;
 }
