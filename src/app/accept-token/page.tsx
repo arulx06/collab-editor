@@ -1,90 +1,120 @@
 // src/app/accept-token/page.tsx
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useSignIn, useClerk } from "@clerk/nextjs";
+import React, { useEffect, useState } from "react";
+import { useSignIn, useClerk, useAuth } from "@clerk/nextjs";
 
-function dlog(...args: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.log("[ACCEPT-TOKEN]", ...args);
-  try {
-    if (typeof window !== "undefined" && window.parent && window.parent !== window) {
-      window.parent.postMessage({ source: "ACCEPT_TOKEN_DEBUG", payload: args }, "*");
-    }
-    if (typeof window !== "undefined" && window.localStorage) {
-      const prev = JSON.parse(window.localStorage.getItem("accept_token_debug_v1") || "[]");
-      prev.push({ ts: new Date().toISOString(), args: JSON.stringify(args) });
-      window.localStorage.setItem("accept_token_debug_v1", JSON.stringify(prev.slice(-30)));
-    }
-  } catch (e) {
-    console.log(e);
-    // ignore
-  }
-}
+function now() { return new Date().toISOString(); }
 
-export default function AcceptTokenPage() {
-  const router = useRouter();
+export default function AcceptTokenDebug() {
   const { isLoaded: signInLoaded, signIn } = useSignIn();
   const clerk = useClerk();
+  const auth = useAuth();
+
+  const [log, setLog] = useState<string[]>([]);
+  const push = (label: string, obj?: any) => {
+    const line = `[${now()}] ${label} ${obj === undefined ? "" : JSON.stringify(obj, null, 2)}`;
+    // eslint-disable-next-line no-console
+    console.log(line);
+    setLog((l) => [...l, line].slice(-200));
+  };
 
   useEffect(() => {
-    dlog("mounted accept-token page", { signInLoaded });
-
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token") ?? params.get("ticket");
-    dlog("token present:", !!token);
-
-    if (!token) {
-      dlog("no token found -> redirecting");
-      router.replace("/");
-      return;
-    }
-
     (async () => {
+      push("mounted accept-token page", { signInLoaded });
+      // read token
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token") ?? params.get("ticket");
+      push("token present", !!token);
+
+      if (!token) {
+        push("no token in URL — nothing to do");
+        return;
+      }
+
+      // wait briefly for signIn to be available
+      const start = Date.now();
+      while ((!signInLoaded || !signIn || !clerk) && Date.now() - start < 5000) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      push("after wait", { signInLoaded: !!signInLoaded, signInAvailable: !!signIn, clerkAvailable: !!clerk });
+
+      if (!signIn) {
+        push("ERROR: signIn object unavailable");
+        return;
+      }
+
       try {
-        const start = Date.now();
-        while ((!signInLoaded || !signIn) && Date.now() - start < 4000) {
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        dlog("after wait: signInLoaded:", signInLoaded, "signIn exists:", !!signIn);
+        push("calling signIn.create with ticket (DO NOT SHARE FULL TOKEN)", { tokenSnippet: token.slice(0, 40) + "..." });
+        const attempt = await signIn.create({ strategy: "ticket", ticket: token });
+        push("signIn.create returned", attempt);
 
-        if (!signIn) {
-          dlog("signIn not available - abort");
-          router.replace("/?signinUnavailable=1");
-          return;
-        }
+        // Dump the attempt keys and any known fields
+        const createdSessionId = (attempt as any)?.createdSessionId ?? null;
+        push("createdSessionId", createdSessionId);
 
-        dlog("calling signIn.create with ticket (first 50 chars):", token.slice(0, 50));
-        const attempt = await signIn.create({
-          strategy: "ticket",
-          ticket: token,
-        });
-        dlog("signIn.create result:", attempt);
+        // If Clerk returned a status
+        push("attempt.status", (attempt as any)?.status ?? null);
 
-        const createdSessionId = (attempt)?.createdSessionId ?? null;
-        dlog("createdSessionId:", createdSessionId);
-
+        // Attempt setActive if we have a createdSessionId
         if (createdSessionId && clerk?.setActive) {
-          dlog("calling clerk.setActive");
-          await clerk.setActive({ session: createdSessionId });
-          dlog("setActive succeeded; now redirecting to /");
-          router.replace("/");
-          return;
+          try {
+            push("calling clerk.setActive", { createdSessionId });
+            await clerk.setActive({ session: createdSessionId });
+            push("clerk.setActive resolved");
+          } catch (e) {
+            push("clerk.setActive threw", e);
+          }
+        } else {
+          push("no createdSessionId or setActive unavailable");
         }
 
-        // if we hit here, signIn didn't produce a createdSessionId
-        dlog("sign-in attempt didn't produce session; full attempt:", attempt);
-        // If attempt.status indicates need for verification, surface reason to logs
-        // (it might be 'needs_first_factor' or such)
-        router.replace("/?signinIncomplete=1");
+        // Give Clerk a moment to settle cookies
+        await new Promise((r) => setTimeout(r, 300));
+        push("auth.isSignedIn", { isSignedIn: auth.isSignedIn, userId: auth.userId ?? null });
+
+        // Check cookies for the current origin (quick snapshot)
+        try {
+          const cookies = document.cookie;
+          push("document.cookie (snapshot)", cookies ? cookies : "<no cookies>");
+        } catch (e) {
+          push("reading document.cookie threw", String(e));
+        }
+
+        // Provide full debug object on screen
+        push("debug finished - copy the below debug blob and paste in chat if still failing");
       } catch (err) {
-        dlog("accept-token error:", err);
-        router.replace("/?signinError=1");
+        push("error during token consumption", String(err));
       }
     })();
-  }, [router, signInLoaded, signIn, clerk]);
+  }, [signInLoaded, signIn, clerk, auth.isSignedIn, auth.userId]);
 
-  return <div className="min-h-screen flex items-center justify-center">Processing sign-in token…</div>;
+  return (
+    <div style={{ padding: 20, fontFamily: "monospace" }}>
+      <h2>Accept-token debug</h2>
+      <p>This page will attempt to consume the sign-in token and print a debug log.</p>
+
+      <div style={{ marginTop: 12 }}>
+        <strong>Logs (most recent at bottom):</strong>
+        <div style={{ maxHeight: 360, overflow: "auto", background: "#111", color: "#eee", padding: 12, marginTop: 8 }}>
+          {log.map((l, i) => <div key={i} style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{l}</div>)}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <strong>Debug blob (copy & paste here):</strong>
+        <textarea
+          readOnly
+          value={JSON.stringify({ logs: log, ts: new Date().toISOString() }, null, 2)}
+          rows={10}
+          style={{ width: "100%", marginTop: 8 }}
+        />
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <button onClick={() => window.location.reload()}>Reload</button>
+        <button onClick={() => { navigator.clipboard?.writeText(JSON.stringify({ logs: log }, null, 2)); }} style={{ marginLeft: 8 }}>Copy debug blob</button>
+      </div>
+    </div>
+  );
 }
