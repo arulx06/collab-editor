@@ -13,6 +13,7 @@ export function useZohoLogin() {
 
     const params = new URLSearchParams(window.location.search);
     const zoho = params.get("zoho");
+    console.log(zoho);
     if (!zoho) return;
 
     (async () => {
@@ -23,6 +24,7 @@ export function useZohoLogin() {
         } catch {
           zohoData = { raw: decodeURIComponent(zoho) };
         }
+        console.log(zohoData);
 
         const res = await fetch("/api/zoho-auth", {
           method: "POST",
