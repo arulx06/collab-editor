@@ -1,92 +1,105 @@
-// src/app/accept-token/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
-type Status = "starting" | "accepting" | "done" | "no-token" | "failed";
+import { useSignIn, useClerk } from "@clerk/nextjs";
 
 export default function AcceptTokenPage() {
   const router = useRouter();
-  const [status, setStatus] = useState<Status>("starting");
+  const { isLoaded: signInLoaded, signIn } = useSignIn();
+  const clerk = useClerk();
+  const [status, setStatus] = useState<"idle" | "working" | "done" | "failed" | "no-token">("idle");
 
   useEffect(() => {
-    if (typeof window === "undefined") return; // browser only
+    async function consumeToken() {
+      setStatus("working");
 
-    async function acceptTokenFlow() {
+      // read token from query param
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token") ?? params.get("ticket"); // accept either name
+
+      if (!token) {
+        setStatus("no-token");
+        // fallback: go home in a second
+        setTimeout(() => router.replace("/"), 900);
+        return;
+      }
+
+      // wait for Clerk signIn JS icon to load
+      if (!signInLoaded || !signIn) {
+        // If Clerk not loaded yet, wait and retry a few times
+        const start = Date.now();
+        while ((!signInLoaded || !signIn) && Date.now() - start < 5000) {
+          // small delay
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+
+      if (!signIn) {
+        console.error("Clerk signIn object not available");
+        setStatus("failed");
+        return;
+      }
+
       try {
-        const params = new URLSearchParams(window.location.search);
-        const token = params.get("token");
+        // Create a sign-in attempt using the ticket strategy.
+        // This consumes the backend-created sign-in token.
+        const signInAttempt = await signIn.create({
+          strategy: "ticket",
+          ticket: token,
+        });
 
-        if (!token) {
-          setStatus("no-token");
-          setTimeout(() => router.replace("/"), 800);
+        // If the sign-in attempt produced a created session id, set it active.
+        // This avoids any UI. setActive makes the session the current browser session.
+        const createdSessionId = (signInAttempt)?.createdSessionId ?? null;
+
+        if (createdSessionId && clerk?.setActive) {
+          // setActive expects SetActiveParams — pass session id
+          await clerk.setActive({ session: createdSessionId });
+          setStatus("done");
+
+          // Now user is signed in in-browser. Redirect to app home / desired page.
+          router.replace("/");
           return;
         }
 
-        setStatus("accepting");
-        console.log("[accept-token] token found, attempting to accept with Clerk...");
-
-        // 1) Preferred API: authenticateWithTicket
-        if (window.Clerk?.authenticateWithTicket) {
-          try {
-            await window.Clerk.authenticateWithTicket({ ticket: token });
-            console.log("[accept-token] authenticateWithTicket succeeded");
-            setStatus("done");
-            router.replace("/");
-            return;
-          } catch (err: unknown) {
-            console.warn("[accept-token] authenticateWithTicket failed:", formatError(err));
-          }
+        // Some setups require extra verification steps (2FA / first factor). If that
+        // happens we cannot complete silently. Handle it gracefully:
+        if ((signInAttempt)?.status === "needs_first_factor") {
+          console.warn("Sign-in requires first factor verification; cannot complete silently.");
+          setStatus("failed");
+          // decide: redirect to a UI route to complete verification, or fallback to sign-in page:
+          router.replace("/sign-in"); // optional
+          return;
         }
 
-        // 2) Fallback API: openSignIn
-        if (window.Clerk?.openSignIn) {
-          try {
-            await window.Clerk.openSignIn({ strategy: "ticket", ticket: token });
-            console.log("[accept-token] openSignIn succeeded");
-            setStatus("done");
-            router.replace("/");
-            return;
-          } catch (err: unknown) {
-            console.warn("[accept-token] openSignIn failed:", formatError(err));
-          }
-        }
-
-        // 3) Fallback: redirect with token in hash
-        console.warn("[accept-token] No Clerk client accept method found, redirecting with token in hash.");
-        window.location.replace(`/?clerk_ticket=${encodeURIComponent(token)}`);
-      } catch (err: unknown) {
-        console.error("[accept-token] unexpected error:", formatError(err));
+        // If no createdSessionId and no explicit need-for-interaction, treat as failure
+        console.error("No createdSessionId returned from signIn.create:", signInAttempt);
         setStatus("failed");
-        setTimeout(() => router.replace("/?loginError=1"), 1200);
+      } catch (err) {
+        console.error("Error accepting sign-in token:", err);
+        setStatus("failed");
       }
     }
 
-    acceptTokenFlow();
-  }, [router]);
+    // Run once on mount
+    consumeToken();
+  }, [router, signInLoaded, signIn, clerk]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="text-center">
-        {status === "starting" && <div>Preparing to sign you in…</div>}
-        {status === "accepting" && <div>Signing you in — please wait…</div>}
-        {status === "done" && <div>Signed in. Redirecting…</div>}
-        {status === "no-token" && <div>No token found. Redirecting…</div>}
+    <div className="min-h-screen flex items-center justify-center">
+      <div>
+        {status === "working" && <p>Signing you in…</p>}
+        {status === "done" && <p>Signed in — redirecting…</p>}
         {status === "failed" && (
           <div>
-            Sign-in failed. You can close this window and try again, or contact support.
+            <p>Could not sign you in silently. Please try signing in manually.</p>
+            <button onClick={() => window.location.replace("/sign-in")}>Open sign-in</button>
           </div>
         )}
+        {status === "no-token" && <p>No token found in URL.</p>}
       </div>
     </div>
   );
-}
-
-/**
- * Safely format unknown errors
- */
-function formatError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
 }
