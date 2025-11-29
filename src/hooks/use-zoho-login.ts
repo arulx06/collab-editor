@@ -84,10 +84,16 @@ export function useZohoLogin() {
         debugLog("zoho-auth response json:", json);
 
         if (json?.token) {
-          debugLog("got token, navigating to accept-token");
-          // navigate to accept-token which finishes Clerk sign-in
-          window.location.href = `/accept-token?token=${encodeURIComponent(json.token)}`;
-        } else {
+          // mark that zoho login already redirected (so reloads don't re-run)
+          try {
+            window.localStorage.setItem("zoho_login_done", "1");
+          } catch (e) { console.log(e); }
+
+          debugLog("got token, navigating to home");
+          // single encode; Token will decode once
+          window.location.href = `/?token=${encodeURIComponent(json.token)}`;
+        }
+        else {
           debugLog("zoho-auth error or no token:", json);
         }
       } catch (e) {

@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     const lastName = typeof body.last_name === "string" ? body.last_name : undefined;
 
     // try to find existing user by email or by public metadata
-    let foundUser: any = null;
+    let foundUser = null;
     try {
       if (zohoEmail) {
         const listResp = await clerkClient.users.getUserList({ emailAddress: [zohoEmail] });
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         if (Array.isArray(listResp.data)) {
           foundUser = listResp.data.find((u) => {
             try {
-              const meta = (u as any).publicMetadata;
+              const meta = u.publicMetadata;
               return meta && meta.zohoId === zohoId;
             } catch {
               return false;
@@ -185,7 +185,7 @@ export async function POST(req: Request) {
       const normalize = (p: Record<string, unknown>) => {
         const out: Record<string, unknown> = {};
         for (const k of Object.keys(p)) {
-          const v = (p as any)[k];
+          const v = p[k];
           if (v !== undefined) out[k] = v;
         }
         return out;
@@ -193,7 +193,7 @@ export async function POST(req: Request) {
       const normalizedPayloads = payloads.map(normalize);
 
       // Try each payload sequentially and capture the first success
-      let lastError: any = null;
+      let lastError = null;
       for (const p of normalizedPayloads) {
         console.log("[ZOHO-AUTH] try createUser with keys:", Object.keys(p));
         try {
@@ -201,36 +201,44 @@ export async function POST(req: Request) {
           console.log("[ZOHO-AUTH] createUser succeeded with keys:", Object.keys(p));
           foundUser = created;
           break;
-        } catch (err: any) {
+        } catch (err) {
           lastError = err;
-          console.error("[ZOHO-AUTH] createUser failed:", {
-            message: err?.message,
-            status: err?.status,
-            clerkTraceId: err?.clerkTraceId,
-            errors: err?.errors,
-          });
+          console.log(err);
         }
       }
 
       if (!foundUser) {
-        // Return full Clerk error payload (stringified) for exact debugging
-        const errPayload = lastError ?? { message: "unknown" };
-        console.error("[ZOHO-AUTH] all attempts failed; returning clerk error payload to client:", errPayload);
+        const clerkError = (e: unknown) => {
+          if (e && typeof e === "object") {
+            const obj = e as Record<string, unknown>;
+            return {
+              message: typeof obj.message === "string" ? obj.message : String(e),
+              status: typeof obj.status === "number" ? obj.status : null,
+              clerkTraceId: typeof obj.clerkTraceId === "string" ? obj.clerkTraceId : null,
+              errors: obj.errors ?? null,
+              raw: safeStringify(e),
+            };
+          }
+          return {
+            message: String(e),
+            status: null,
+            clerkTraceId: null,
+            errors: null,
+            raw: safeStringify(e),
+          };
+        };
+
+        console.error("[ZOHO-AUTH] all attempts failed; returning clerk error payload to client:", lastError);
+
         return NextResponse.json({
           error: "Failed to create Clerk user",
-          clerkError: {
-            message: errPayload?.message ?? String(errPayload),
-            status: errPayload?.status ?? null,
-            clerkTraceId: errPayload?.clerkTraceId ?? null,
-            errors: errPayload?.errors ?? null,
-            raw: safeStringify(errPayload),
-          },
+          clerkError: clerkError(lastError),
         }, { status: 422 });
       }
     }
 
     // At this point we have foundUser
-    const userId = (foundUser as any).id;
+    const userId = (foundUser).id;
     if (!userId) {
       console.error("[ZOHO-AUTH] foundUser has no id", foundUser);
       return NextResponse.json({ error: "User created but no id returned" }, { status: 500 });
@@ -239,7 +247,7 @@ export async function POST(req: Request) {
     try {
       const signInResp = await clerkClient.signInTokens.createSignInToken({
         userId,
-        expiresInSeconds: 60,
+        expiresInSeconds: 300,
       });
       console.log("[ZOHO-AUTH] sign in token length:", (signInResp?.token ?? "").length);
       return NextResponse.json({ token: signInResp.token });

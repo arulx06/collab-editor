@@ -19,10 +19,11 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY!}>
       {/* call the hook from a child component so Clerk context is available */}
-      <ZohoInitializer>
+      
         <ConvexProviderWithClerk useAuth={useAuth} client={convex}>
+          <ZohoInitializer>
           <Authenticated>{children}</Authenticated>
-
+          </ZohoInitializer>
           <Unauthenticated>
             <div className="flex flex-col items-center justify-center min-h-screen">
               <SignIn routing="hash" />
@@ -33,7 +34,7 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
             <FullscreenLoader label="Auth loading..." />
           </AuthLoading>
         </ConvexProviderWithClerk>
-      </ZohoInitializer>
+      
     </ClerkProvider>
   );
 }
