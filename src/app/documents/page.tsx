@@ -1,9 +1,10 @@
-import React from 'react'
+import { Suspense } from "react";
+import DocumentsClient from "./DocumentsClient";
 
-const DocumentsPage = () => {
+export default function DocumentsPage() {
   return (
-    <div>DocumentsPage</div>
-  )
+    <Suspense fallback={<div>Loading documents…</div>}>
+      <DocumentsClient />
+    </Suspense>
+  );
 }
-
-export default DocumentsPage

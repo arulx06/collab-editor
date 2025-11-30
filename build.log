@@ -1,0 +1,39 @@
+
+> collab-editor@0.1.0 build
+> next build
+
+   ▲ Next.js 15.0.3
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+./src/app/documents/[documentId]/avatars.tsx
+56:13  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/documents/[documentId]/ruler.tsx
+64:51  Warning: The ref value 'rulerRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rulerRef.current' to a variable inside the effect, and use that variable in the cleanup function.  react-hooks/exhaustive-deps
+100:6  Warning: React Hook useEffect has missing dependencies: 'handleLeftChange' and 'handleRightChange'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/hooks/use-zoho-login.ts
+79:6  Warning: React Hook useEffect has missing dependencies: 'router', 'setActive', and 'signIn'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/building-your-application/configuring/eslint#disabling-rules
+   Collecting page data ...
+   Generating static pages (0/9) ...
+   Generating static pages (2/9) 
+ ⨯ useSearchParams() should be wrapped in a suspense boundary at page "/404". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at a (F:\Cliqtrix\collab-editor\.next\server\chunks\649.js:1:13433)
+    at d (F:\Cliqtrix\collab-editor\.next\server\chunks\649.js:1:26593)
+    at F:\Cliqtrix\collab-editor\.next\server\app\_not-found\page.js:1:4125
+    at v (F:\Cliqtrix\collab-editor\.next\server\app\_not-found\page.js:1:4220)
+    at n$ (F:\Cliqtrix\collab-editor\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:20:45906)
+    at nI (F:\Cliqtrix\collab-editor\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:20:47681)
+    at nL (F:\Cliqtrix\collab-editor\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:20:65480)
+    at nN (F:\Cliqtrix\collab-editor\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:20:63111)
+    at nB (F:\Cliqtrix\collab-editor\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:20:68893)
+    at nD (F:\Cliqtrix\collab-editor\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:20:67594)
+Error occurred prerendering page "/_not-found". Read more: https://nextjs.org/docs/messages/prerender-error
+Export encountered an error on /_not-found/page: /_not-found, exiting the build.
+ ⨯ Static worker exited with code: 1 and signal: null

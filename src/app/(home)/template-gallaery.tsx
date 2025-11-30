@@ -9,7 +9,7 @@ import { api } from "../../../convex/_generated/api"
 import { useState } from "react"
 import { toast } from "sonner"
 
-export const TemplateGallary = ()=>{
+const TemplateGallary = ()=>{
 
     const router = useRouter()
     const create = useMutation(api.documents.create)
@@ -83,3 +83,5 @@ export const TemplateGallary = ()=>{
         </div>
     )
 }
+
+export default TemplateGallary;

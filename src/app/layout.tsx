@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import "@liveblocks/react-ui/styles.css";
 import "@liveblocks/react-tiptap/styles.css";
 import "./globals.css";
@@ -27,12 +29,14 @@ export default function RootLayout({
       <body
         className={inter.className}
       >
+        <Suspense fallback={null}>
         <NuqsAdapter>
           <ConvexClientProvider>
             <Toaster />
             {children}
           </ConvexClientProvider>
-        </NuqsAdapter>       
+        </NuqsAdapter>      
+        </Suspense> 
       </body>
     </html>
   );

@@ -17,7 +17,7 @@ interface DocumentsTableProps {
     loadMore : (numItems : number)=> void
     status : PaginationStatus
 }
-export const DocumentsTable = ({
+const DocumentsTable = ({
     documents,
     loadMore,
     status
@@ -68,3 +68,5 @@ export const DocumentsTable = ({
         </div>
     )
 }
+
+export default DocumentsTable;

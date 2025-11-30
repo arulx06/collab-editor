@@ -11,8 +11,8 @@ function debugLog(...args: unknown[]) {
 export function useZohoLogin() {
   const router = useRouter();
   const search = useSearchParams();
-  const zoho = search.get("zoho");
-  const token = search.get("token");
+  const zoho = search?.get("zoho");
+  const token = search?.get("token");
 
   const { isLoaded, signIn } = useSignIn();
   const { setActive } = useClerk();  
